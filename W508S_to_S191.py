@@ -84,6 +84,8 @@ def get_raw_macodell_blocks(path, file_name):
                     temp_buffer.clear()
                     temp_buffer.append(temp_line)
             row_list.append(temp_buffer[:])
+            found_G65P200 = ('G65P200', 'G65P150')
+            found_G1100 = ('G1100', 'G1102', 'G1101')
             temp_buffer.clear()
             for element in row_list:
                 found_G53 = False
@@ -99,8 +101,11 @@ def get_raw_macodell_blocks(path, file_name):
                         block_type = 'drilling'
                     elif line.startswith('G65P'):
                         block_type = 'subroutine'
-                        if line.startswith('G65P200'):
+                        if line.startswith(found_G65P200):
                             found_G53 = True
+                    elif line.startswith(found_G1100):
+                        block_type = 'subroutine'
+                        found_G53 = True
                 temp_buffer.extend(element)
                 if found_G53:
                     head_block = old_blocks(block_type, temp_buffer[:])
@@ -161,8 +166,8 @@ def get_milling_block(block, number):
     data = {'angle_c': '', 'angle_b': '', 'speed': 'S2000', 'tool_num': '',
             'feed': '', 'x_1': '', 'y_1': '', 'z_1': '', 'h_num': ''}
     begin_g806 = ('G806', 'G1001', 'G802')
-    not_allowed_symbols = ('G54', 'G55', 'G56', 'G57', 'M03',
-                           'G58', 'M3', 'G53', 'M0\n', 'M00\n', 'M9', 'S')
+    not_allowed_symbols = ('G54', 'G55', 'G56', 'G57', 'M03', 'M1', 'M01',
+                           'G58', 'M3', 'G53', 'M0\n', 'M00\n', 'M9', 'S', '\n', ' ')
     find_s = ('(', '#', '\n', ' ')
     feeds = dict()
     for index, line in enumerate(block):
@@ -234,18 +239,158 @@ def get_milling_block(block, number):
             new_block.append(temp_line)
         elif line.startswith(not_allowed_symbols):
             new_block.pop()
-        elif line.startswith('M01'):
-            new_block.pop()
-            new_block.append('M12\n')
         elif line.startswith('#') and '=' in line:
             new_block.pop()
             new_feed = ''.join(('F', line.partition('=')[0]))
             if new_feed not in feeds:
+                temp_mes_2 = line.partition('=')[2].strip()
+                if '(' in temp_mes_2:
+                    temp_mes_2 = temp_mes_2.partition('(')[0]
                 feeds[new_feed] = ''.join(
-                    ('F', line.partition('=')[2].strip()))
-        elif line.startswith('M1'):
+                    ('F', temp_mes_2))
+        elif line.startswith('M8'):
             new_block.pop()
-            new_block.append('M12\n')
+            new_block.append('M8M138\n')
+        elif line.startswith('N'):
+            new_block.pop()
+            temp_mes = ''.join(('N', str(number), '\n'))
+            new_block.append(temp_mes)
+        if 'F#' in line:
+            temp_feed = get_number_parametr(line, 'F')
+            if temp_feed in feeds:
+                temp_message = line.replace(temp_feed, feeds[temp_feed])
+                new_block.pop()
+                new_block.append(temp_message)
+
+    while len(new_block) > 0:
+        if new_block[-1].strip() == '':
+            new_block.pop()
+        else:
+            break
+
+    mes_block = list()
+    while len(new_block) > 0:
+        if new_block[-1].strip().startswith('('):
+            mes_block.insert(0, new_block.pop())
+        else:
+            break
+
+    new_block.extend(end_of_frame)
+    if len(mes_block) > 0:
+        new_block.pop()
+        new_block.extend(mes_block)
+        new_block.append('\n')
+        new_block.append('\n')
+
+    number += 10
+    return new_block, number
+
+
+def get_subroutine_block(block, number):
+    new_block = list()
+    end_of_frame = ['M9\n', 'G69\n', 'G49\n',
+                    'M5\n', 'M53\n', 'M00\n', '\n', '\n']
+    data = {'angle_c': '', 'angle_b': '', 'speed': 'S2000', 'tool_num': '',
+            'feed': '', 'x_1': '', 'y_1': '', 'z_1': '', 'h_num': ''}
+    begin_g806 = ('G806', 'G1001', 'G802')
+    found_G1100 = ('G1100', 'G1102', 'G1101')
+    begin_G65P200 = ('G65P200', 'G65P201', 'G65P203', 'G65P150', 'G65P151')
+    not_allowed_symbols = ('G54', 'G55', 'G56', 'G57', 'M03', 'M01', 'M1',
+                           'G58', 'M3', 'G53', 'M0\n', 'M00\n', 'M9', 'S', '\n', ' ')
+    find_s = ('(', '#', '\n', ' ')
+    feeds = dict()
+    measure_block = False
+    for index, line in enumerate(block):
+        new_block.append(line)
+        if line.startswith(begin_g806):
+            new_block.pop()
+            data['angle_b'] = get_number_after_letter(line, 'B')
+            data['angle_c'] = get_number_after_letter(line, 'C')
+            if ('S') in line:
+                data['speed'] = get_number_after_letter(line, 'S')
+            data['feed'] = get_number_after_letter(line, 'F')
+            data['x_1'] = get_number_after_letter(line, 'X')
+            data['y_1'] = get_number_after_letter(line, 'Y')
+            data['z_1'] = get_number_after_letter(line, 'Z')
+            data['h_num'] = get_number_after_letter(line, 'H')
+            data['h_num'] = ''.join(
+                ('H', str(int(data['h_num'].strip().partition('H')[2]) - 11)))
+            if not line.startswith('G802'):
+                data['tool_num'] = get_number_after_letter(line, 'T')
+            count = 1
+            while count < 5:
+                if block[index + count].startswith('S'):
+                    data['speed'] = get_number_after_letter(
+                        block[index + count], 'S')
+                    break
+                elif not block[index + count].startswith(find_s):
+                    break
+                count += 1
+            if line.startswith('G802'):
+                shrink_data = list()
+                allow_shink = (' ', '\n', '(')
+                while len(new_block) > 0:
+                    if new_block[-1].startswith(allow_shink):
+                        shrink_data.insert(0, new_block.pop())
+                    elif new_block[-1].startswith('M12'):
+                        new_block.pop()
+                    else:
+                        new_block.extend(end_of_frame[:])
+                        number += 10
+                        temp_mes = ''.join(('N', str(number), '\n'))
+                        new_block.append(temp_mes)
+                        for line_2 in shrink_data:
+                            if not line_2.startswith('\n'):
+                                new_block.append(line_2)
+                        break
+            temp_line = ''.join(
+                ('M6', data['tool_num'], data['h_num'], data['angle_b'], '\n'))
+            new_block.append(temp_line)
+            temp_line = ''.join(
+                ('M3', data['speed'], '\n'))
+            new_block.append(temp_line)
+            temp_line = ''.join(
+                ('G0', data['angle_c'], '\n'))
+            new_block.append(temp_line)
+            if int(float(data['angle_b'].partition('B')[2])) != 0:
+                new_block.append('G211\n')
+                temp_line = ''.join(
+                    ('G0X60Y0Z100', data['angle_b'], '\n'))
+                new_block.append(temp_line)
+                new_block.append('G49\n')
+            temp_line = ''.join(
+                ('G304X#510Y#511Z#512', data['angle_c'], '\n'))
+            new_block.append(temp_line)
+            temp_line = ''.join(
+                ('G201X0Y0Z0', data['angle_b'], '\n'))
+            new_block.append(temp_line)
+            temp_line = ''.join(
+                ('G1', data['x_1'], data['y_1'], data['z_1'], data['feed'], '\n'))
+            new_block.append(temp_line)
+        elif line.startswith(found_G1100):
+            new_block.clear()
+            temp_mes = ''.join(('N', str(number), '\n'))
+            new_block.append(temp_mes)
+            temp_mes = '(*************)\n'
+            new_block.append(temp_mes)
+            temp_mes = '(BLOCK NEVOZMOGNO PREOBRAZOVAT V BUMOTEC)\n'
+            new_block.append(temp_mes)
+            temp_mes = '(*************)\n'
+            new_block.append(temp_mes)
+            break
+        elif line.startswith(not_allowed_symbols):
+            new_block.pop()
+        elif line.startswith('#') and '=' in line:
+            new_block.pop()
+            new_feed = ''.join(('F', line.partition('=')[0]))
+            if new_feed not in feeds:
+                temp_mes_2 = line.partition('=')[2].strip()
+                if '(' in temp_mes_2:
+                    temp_mes_2 = temp_mes_2.partition('(')[0]
+                feeds[new_feed] = ''.join(
+                    ('F', temp_mes_2))
+        elif line.startswith(begin_G65P200):
+            measure_block = True
         elif line.startswith('M8'):
             new_block.pop()
             new_block.append('M8M138\n')
@@ -265,7 +410,10 @@ def get_milling_block(block, number):
         else:
             break
     number += 10
-    new_block.extend(end_of_frame)
+    if measure_block:
+        new_block.extend(end_of_frame[5:])
+    else:
+        new_block.extend(end_of_frame)
     return new_block, number
 
 
@@ -279,6 +427,10 @@ def convert_into_bumotec(raw_blocks, path, old_file_name):
         for element in raw_blocks[1:]:
             if element.block_type == 'milling' or element.block_type == 'drilling':
                 new_list, number = get_milling_block(element.block, number)
+                bumotec_blocks.extend(new_list[:])
+                new_list.clear()
+            elif element.block_type == 'subroutine':
+                new_list, number = get_subroutine_block(element.block, number)
                 bumotec_blocks.extend(new_list[:])
                 new_list.clear()
 

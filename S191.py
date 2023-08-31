@@ -52,7 +52,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.status_label.setText(
                 'Что-то пошло не так... Проверьте ошибки в файле error.log программы.')
         else:
-            self.status_label.setText('Файл успешно преобразован.')
+            self.status_label.setText(
+                'Файл преобразован. Внимательно проверьте каждый кадр.')
 
 
 app = QApplication(sys.argv)
