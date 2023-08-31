@@ -289,14 +289,24 @@ def convert_into_bumotec(raw_blocks, path, old_file_name):
         add_to_error_log(exc, error_message)
 
 
-def main():
-    data = load_config()
-    # file_name = 'O1121.NC'
-    file_name = 'O1234.NC'
-    # file_name = 'O0008'
-    current_path = os.path.join(data[0], file_name)
+def save_config(last_path):
+    current_path = os.path.join(os.path.abspath(''), 'data', 'config.txt')
+    try:
+        data = list()
+        with open(current_path, 'r', encoding='UTF-8') as read_file:
+            for line in read_file:
+                data.append(line)
+        with open(current_path, 'w', encoding='UTF-8') as write_file:
+            new_path = ''.join(('current path=', last_path))
+            write_file.writelines(new_path)
+    except BaseException as exc:
+        error_message = f'Ошибка при попытке сохранить новый путь в файл config.txt.\n'
+        add_to_error_log(exc, error_message)
+    return data
+
+
+def main(current_path, data):
+    file_name = current_path.split('/')[-1]
+    folder = '/'.join(current_path.split('/')[:-1])
     raw_blocks = get_raw_macodell_blocks(current_path, file_name)
-    convert_into_bumotec(raw_blocks, data[0], file_name)
-
-
-main()
+    convert_into_bumotec(raw_blocks, folder, file_name)
