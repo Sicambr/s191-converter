@@ -306,7 +306,19 @@ def save_config(last_path):
 
 
 def main(current_path, data):
+    # Clear an error.log file before run main script
+    mistakes_path = os.path.join(os.path.abspath(''), 'error.log')
+    if os.path.exists(mistakes_path):
+        os.remove(mistakes_path)
+
     file_name = current_path.split('/')[-1]
     folder = '/'.join(current_path.split('/')[:-1])
     raw_blocks = get_raw_macodell_blocks(current_path, file_name)
-    convert_into_bumotec(raw_blocks, folder, file_name)
+    if not os.path.exists(os.path.join(os.path.abspath(''), 'error.log')):
+        convert_into_bumotec(raw_blocks, folder, file_name)
+
+    # Check if error.log exist in work folder
+    without_mistakes = 0
+    if os.path.exists(mistakes_path):
+        without_mistakes = 1
+    return without_mistakes
