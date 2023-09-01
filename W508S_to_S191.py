@@ -99,6 +99,10 @@ def get_raw_macodell_blocks(path, file_name):
                         block_type = 'drilling'
                     elif line.startswith('G83'):
                         block_type = 'drilling'
+                    elif line.startswith('G201'):
+                        raise ValueError
+                    elif line.startswith('G304'):
+                        raise ValueError
                     elif line.startswith('G65P'):
                         block_type = 'subroutine'
                         if line.startswith(found_G65P200):
@@ -112,6 +116,9 @@ def get_raw_macodell_blocks(path, file_name):
                     all_frames.append(head_block)
                     temp_buffer.clear()
                     found_G53 = False
+    except ValueError as exc:
+        error_message = f'Файл уже является файлом Bumotec. Отклонено.\n'
+        add_to_error_log(exc, error_message)
     except TypeError as exc:
         error_message = f'Слишком сложный файл для преобразования. Отклонено.\n'
         add_to_error_log(exc, error_message)
@@ -136,6 +143,8 @@ def convert_head_for_bumotec(block):
                 temp_line = ''.join(('<', line.rstrip(), '>\n'))
                 new_head.append(temp_line)
         elif line.startswith('G5'):
+            new_head.pop()
+        elif line.startswith('%'):
             new_head.pop()
         elif line.startswith('M25'):
             new_head.pop()
@@ -166,7 +175,7 @@ def get_milling_block(block, number):
     data = {'angle_c': '', 'angle_b': '', 'speed': 'S2000', 'tool_num': '',
             'feed': '', 'x_1': '', 'y_1': '', 'z_1': '', 'h_num': ''}
     begin_g806 = ('G806', 'G1001', 'G802')
-    not_allowed_symbols = ('G54', 'G55', 'G56', 'G57', 'M03', 'M1', 'M01',
+    not_allowed_symbols = ('G54', 'G55', 'G56', 'G57', 'M03', 'M1', 'M01', '/M6T', '%', 'M30',
                            'G58', 'M3', 'G53', 'M0\n', 'M00\n', 'M9', 'S', '\n', ' ')
     find_s = ('(', '#', '\n', ' ')
     feeds = dict()
@@ -295,7 +304,7 @@ def get_subroutine_block(block, number):
     begin_g806 = ('G806', 'G1001', 'G802')
     found_G1100 = ('G1100', 'G1102', 'G1101')
     begin_G65P200 = ('G65P200', 'G65P201', 'G65P203', 'G65P150', 'G65P151')
-    not_allowed_symbols = ('G54', 'G55', 'G56', 'G57', 'M03', 'M01', 'M1',
+    not_allowed_symbols = ('G54', 'G55', 'G56', 'G57', 'M03', 'M01', 'M1', '/M6T', '%', 'M30',
                            'G58', 'M3', 'G53', 'M0\n', 'M00\n', 'M9', 'S', '\n', ' ')
     find_s = ('(', '#', '\n', ' ')
     feeds = dict()
@@ -425,7 +434,7 @@ def get_old_milling_block(block, number):
     data = {'angle_c': '', 'angle_b': '', 'speed': 'S2000', 'tool_num': '',
             'feed': '', 'x_1': '', 'y_1': '', 'z_1': '', 'h_num': ''}
     begin_g806 = ('G806', 'G1001', 'G802')
-    not_allowed_symbols = ('G54', 'G55', 'G56', 'G57',
+    not_allowed_symbols = ('G54', 'G55', 'G56', 'G57', '/M6T', '%', 'M30',
                            'G58', 'G53', 'M0\n', 'M00\n', 'M9', 'S')
     find_s = ('(', '#', '\n', ' ')
     for index, line in enumerate(block):
@@ -577,6 +586,9 @@ def convert_into_bumotec(raw_blocks, path, old_file_name):
                 new_list, number = get_old_milling_block(element.block, number)
                 bumotec_blocks.extend(new_list[:])
                 new_list.clear()
+        bumotec_blocks.insert(0, '%\n')
+        bumotec_blocks.append('M30\n')
+        bumotec_blocks.append('%\n')
 
         with open(current_path, 'w', encoding='UTF-8') as file:
             file.writelines(bumotec_blocks)
