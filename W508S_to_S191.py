@@ -417,6 +417,146 @@ def get_subroutine_block(block, number):
     return new_block, number
 
 
+def get_old_milling_block(block, number):
+    save_num = number
+    new_block = list()
+    end_of_frame = ['M9\n', 'G69\n', 'G49\n',
+                    'M5\n', 'M53\n', 'M00\n', '\n', '\n']
+    data = {'angle_c': '', 'angle_b': '', 'speed': 'S2000', 'tool_num': '',
+            'feed': '', 'x_1': '', 'y_1': '', 'z_1': '', 'h_num': ''}
+    begin_g806 = ('G806', 'G1001', 'G802')
+    not_allowed_symbols = ('G54', 'G55', 'G56', 'G57',
+                           'G58', 'G53', 'M0\n', 'M00\n', 'M9', 'S')
+    find_s = ('(', '#', '\n', ' ')
+    for index, line in enumerate(block):
+        new_block.append(line)
+        if line.startswith(begin_g806):
+            new_block.pop()
+            data['angle_b'] = get_number_after_letter(line, 'B')
+            data['angle_c'] = get_number_after_letter(line, 'C')
+            if ('S') in line:
+                data['speed'] = get_number_after_letter(line, 'S')
+            data['feed'] = get_number_after_letter(line, 'F')
+            data['x_1'] = get_number_after_letter(line, 'X')
+            data['y_1'] = get_number_after_letter(line, 'Y')
+            data['z_1'] = get_number_after_letter(line, 'Z')
+            data['h_num'] = get_number_after_letter(line, 'H')
+            data['h_num'] = ''.join(
+                ('H', str(int(data['h_num'].strip().partition('H')[2]) - 11)))
+            if not line.startswith('G802'):
+                data['tool_num'] = get_number_after_letter(line, 'T')
+            count = 1
+            while count < 5:
+                if block[index + count].startswith('S'):
+                    data['speed'] = get_number_after_letter(
+                        block[index + count], 'S')
+                    break
+                elif not block[index + count].startswith(find_s):
+                    break
+                count += 1
+            if line.startswith('G802'):
+                shrink_data = list()
+                allow_shink = (' ', '\n', '(')
+                while len(new_block) > 0:
+                    if new_block[-1].startswith(allow_shink):
+                        shrink_data.insert(0, new_block.pop())
+                    elif new_block[-1].startswith('M12'):
+                        new_block.pop()
+                    else:
+                        new_block.extend(end_of_frame[:])
+                        number += 10
+                        temp_mes = ''.join(('N', str(number), '\n'))
+                        new_block.append(temp_mes)
+                        for line_2 in shrink_data:
+                            if not line_2.startswith('\n'):
+                                new_block.append(line_2)
+                        break
+            temp_line = ''.join(
+                ('M6', data['tool_num'], data['h_num'], data['angle_b'], '\n'))
+            new_block.append(temp_line)
+            temp_line = ''.join(
+                ('M3', data['speed'], '\n'))
+            new_block.append(temp_line)
+            temp_line = ''.join(
+                ('G0', data['angle_c'], '\n'))
+            new_block.append(temp_line)
+            if int(float(data['angle_b'].partition('B')[2])) != 0:
+                new_block.append('G211\n')
+                temp_line = ''.join(
+                    ('G0X60Y0Z100', data['angle_b'], '\n'))
+                new_block.append(temp_line)
+                new_block.append('G49\n')
+            temp_line = ''.join(
+                ('G304X#510Y#511Z#512', data['angle_c'], '\n'))
+            new_block.append(temp_line)
+            temp_line = ''.join(
+                ('G201X0Y0Z0', data['angle_b'], '\n'))
+            new_block.append(temp_line)
+            temp_line = ''.join(
+                ('G1', data['x_1'], data['y_1'], data['z_1'], data['feed'], '\n'))
+            new_block.append(temp_line)
+        elif line.startswith(not_allowed_symbols):
+            new_block.pop()
+        elif '#' in line:
+            new_block.pop()
+            new_line = ''
+            if '#10' in line:
+                new_line = line.replace('#10', '#100')
+            elif '#1' in line:
+                new_line = line.replace('#1', '#106')
+            elif '#5' in line:
+                new_line = line.replace('#5', '#105')
+            else:
+                numbers = get_number_after_letter(line, '#')
+                parametr = '#'
+                if len(numbers[1:]) == 1:
+                    parametr = ''.join(('#10', numbers[1:]))
+                elif len(numbers[1:]) > 1:
+                    parametr = ''.join(('#1', numbers[1:]))
+                new_line = line.replace(numbers, parametr)
+            new_block.append(new_line)
+        elif 'M8' in line:
+            new_block.pop()
+            new_block.append(line.replace('M8', 'M8M138'))
+        elif 'M08' in line:
+            new_block.pop()
+            new_block.append(line.replace('M08', 'M8M138'))
+        elif 'M01' in line:
+            new_block.pop()
+            new_block.append(line.replace('M01', ''))
+        elif 'M1' in line:
+            new_block.pop()
+            new_block.append(line.replace('M1', ''))
+        elif 'M03' in line:
+            new_block.pop()
+            new_block.append(line.replace('M03', ''))
+        elif ('M3' in line) and not line.startswith('M3'):
+            new_block.pop()
+            new_block.append(line.replace('M3', ''))
+        elif line.startswith('N'):
+            new_block.pop()
+            temp_mes = ''.join(('N', str(number), '\n'))
+            new_block.append(temp_mes)
+    while len(new_block) > 0:
+        if new_block[-1].strip() == '':
+            new_block.pop()
+        else:
+            break
+    number = save_num - 1
+    for index, item in enumerate(new_block):
+        if item.startswith('N'):
+            number += 1
+            temp_mes = ''.join(('N', str(number), '\n'))
+            new_block[index] = temp_mes
+        elif item.startswith('IF[#'):
+            temp_mes = ''.join(
+                (item.partition('GOTO')[0], 'GOTO', str(number), '\n'))
+            new_block[index] = temp_mes
+    new_block.extend(end_of_frame)
+    number = (number // 10) * 10 + 10
+    return new_block, number
+
+
 def convert_into_bumotec(raw_blocks, path, old_file_name):
     bumotec_blocks = list()
     bumotec_blocks.extend(convert_head_for_bumotec(raw_blocks[0].block))
@@ -431,6 +571,10 @@ def convert_into_bumotec(raw_blocks, path, old_file_name):
                 new_list.clear()
             elif element.block_type == 'subroutine':
                 new_list, number = get_subroutine_block(element.block, number)
+                bumotec_blocks.extend(new_list[:])
+                new_list.clear()
+            elif element.block_type == 'old_milling':
+                new_list, number = get_old_milling_block(element.block, number)
                 bumotec_blocks.extend(new_list[:])
                 new_list.clear()
 
